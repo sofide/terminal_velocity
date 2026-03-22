@@ -172,8 +172,10 @@ class BotLogic:
 
         # attack ennemies when having the opportunity
         if spaceships_in_range and state.position not in self.home_base_positions:
-            self.mode = "aa"
-            return self.power_action(engines=2, shields=0, lasers=1)
+            desired_power = {ENGINES: 2, SHIELDS: 0, LASERS: 1}
+            if power_distribution != desired_power:
+                self.mode = "aa"
+                return self.power_action(**desired_power)
 
         self.mode = "m2"
 
