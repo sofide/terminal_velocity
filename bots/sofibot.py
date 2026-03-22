@@ -32,7 +32,7 @@ def iconization(f):
 
 class State:
 
-    def __init__(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board):
+    def __init__(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board, map_radius):
         self.turn_number = turn_number
         self.hp = hp
         self.ship_number = ship_number
@@ -41,9 +41,16 @@ class State:
         self.power_distribution = power_distribution
         self.radar_contacts = radar_contacts
         self.leader_board = leader_board
+        self.map_radius = map_radius
 
         self.speed = power_distribution[ENGINES] - cargo
-        self.positions_in_range = set(position.positions_in_range(self.speed))
+
+        self.positions_in_range = set()
+
+        for x, y in position.positions_in_range(self.speed):
+            if abs(x) > map_radius or abs(y) > map_radius:
+                continue
+            self.positions_in_range.add(Position(x, y))
 
 
 class BotLogic:
@@ -54,19 +61,6 @@ class BotLogic:
         self.home_base_positions = home_base_positions
 
         self.positions_without_asteroids_on_sight = set()
-
-        old_positions_in_range_func = Position.positions_in_range
-
-        def positions_in_range_fixed_to_map_size(_self, radius):
-            positions = old_positions_in_range_func(_self, radius)
-
-            for x, y in positions:
-                if abs(x) > map_radius or abs(y) > map_radius:
-                    continue
-                yield Position(x, y)
-
-        Position.positions_in_range = positions_in_range_fixed_to_map_size
-
 
     def get_nearest_position_and_distance_from_points(self, position, points_to_go):
         nearest_position = None
@@ -155,7 +149,7 @@ class BotLogic:
 
     @iconization
     def turn(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board):
-        state = State(turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board)
+        state = State(turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board, self.map_radius)
 
         if state.cargo:
             self.mode = "cc"
