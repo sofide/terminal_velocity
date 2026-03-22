@@ -1,3 +1,4 @@
+import math
 import random
 import logging
 
@@ -10,6 +11,24 @@ from tv.game import (
     HOME_BASE, ASTEROID, SPACESHIP,  # radar contact types
     Position,
 )
+
+def iconization(f):
+    def wrap(self, *args, **kwargs):
+        action, metadata = f(self, *args, **kwargs)
+
+        if action == POWER_TO:
+            engines = metadata[ENGINES]
+            lasers = metadata[LASERS]
+
+            values = sum(metadata.values())
+
+            self.icon = f"{engines}{lasers}"
+
+        return action, metadata
+
+    return wrap
+
+
 
 class State:
 
@@ -78,7 +97,8 @@ class BotLogic:
 
         return self.get_nearest_position_and_distance_from_points(state.position, asteroid_positions)
 
-    def go_to_position(self, postion_to_go, position_distance, state):
+    def go_to_position(self, postion_to_go, state):
+        position_distance = math.ceil(state.position.distance_to(postion_to_go))
         if postion_to_go in state.positions_in_range:
             return FLY_TO, postion_to_go
 
@@ -98,8 +118,8 @@ class BotLogic:
     def go_to_mine(self, state):
         nearest_asteroid = self.nearest_asteroid(state)
         if nearest_asteroid:
-            asteroid_position, asteroid_distance = nearest_asteroid
-            return self.go_to_position(asteroid_position, asteroid_distance, state)
+            asteroid_position, _ = nearest_asteroid
+            return self.go_to_position(asteroid_position, state)
 
         # no asteroid on sight, fly random (avoid ships and base)
         self.positions_without_asteroids_on_sight.add(state.position)
@@ -123,24 +143,26 @@ class BotLogic:
         if not base_on_sight:
             # no base on sight, fly to the center of the map
             base = Position(0, 0)
-            distance = state.position.distance_to(base)
-            return self.go_to_position(base, distance, state)
+            return self.go_to_position(base, state)
 
-        position, distance =  self.get_nearest_position_and_distance_from_points(state.position, base_on_sight)
+        position, _ =  self.get_nearest_position_and_distance_from_points(state.position, base_on_sight)
 
-        return self.go_to_position(position, distance, state)
+        return self.go_to_position(position, state)
 
     @staticmethod
     def power_action(engines, shields, lasers):
         return POWER_TO, {ENGINES: int(engines), SHIELDS: int(shields), LASERS: int(lasers)}
 
+    @iconization
     def turn(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board):
         state = State(turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board)
 
         if state.cargo:
+            self.mode = "cc"
             return self.go_to_base(state)
 
         if position in self.home_base_positions:
+            self.mode = "mm"
             return self.go_to_mine(state)
 
         spaceships_in_range = [
@@ -154,6 +176,9 @@ class BotLogic:
 
         # attack ennemies when having the opportunity
         if spaceships_in_range and state.position not in self.home_base_positions:
-            return self.power_action(engines=0, shields=0, lasers=MAX_POWER)
+            self.mode = "aa"
+            return self.power_action(engines=2, shields=0, lasers=1)
+
+        self.mode = "m2"
 
         return self.go_to_mine(state)
