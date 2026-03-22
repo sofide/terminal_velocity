@@ -158,26 +158,6 @@ class BotLogic:
             self.mode = "cc"
             return self.go_to_base(state)
 
-        if position in self.home_base_positions:
-            self.mode = "mm"
-            return self.go_to_mine(state)
-
-        spaceships_in_range = [
-            position
-            for position, contact
-            in state.radar_contacts.items()
-            if contact == SPACESHIP
-            and state.position.distance_to(position) <= ATTACK_RADIUS
-            and position not in self.home_base_positions
-        ]
-
-        """
-        # attack ennemies when having the opportunity
-        if spaceships_in_range and state.position not in self.home_base_positions:
-            self.mode = "aa"
-            return self.power_action(engines=2, shields=0, lasers=1)
-        """
-
-        self.mode = "m2"
+        self.mode = "mm"
 
         return self.go_to_mine(state)
