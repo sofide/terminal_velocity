@@ -20,14 +20,15 @@ def iconization(f):
             engines = metadata[ENGINES]
             lasers = metadata[LASERS]
 
-            values = sum(metadata.values())
+        else:
+            engines = kwargs["power_distribution"][ENGINES]
+            lasers = kwargs["power_distribution"][LASERS]
 
-            self.icon = f"{engines}{lasers}"
+        self.icon = f"{engines}{lasers}"
 
         return action, metadata
 
     return wrap
-
 
 
 class State:
