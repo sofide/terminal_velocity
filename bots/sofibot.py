@@ -54,7 +54,8 @@ class State:
 
 
 class BotLogic:
-    def initialize(self, map_radius, players, turns, home_base_positions):
+    def initialize(self, player_name, map_radius, players, turns, home_base_positions):
+        self.player_name = player_name
         self.map_radius = map_radius
         self.players = players
         self.turns = turns
