@@ -33,7 +33,8 @@ def iconization(f):
 
 class State:
 
-    def __init__(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board, map_radius):
+    def __init__(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board, game_info):
+        self.player_name = game_info.player_name
         self.turn_number = turn_number
         self.hp = hp
         self.ship_number = ship_number
@@ -42,17 +43,21 @@ class State:
         self.power_distribution = power_distribution
         self.radar_contacts = radar_contacts
         self.leader_board = leader_board
-        self.map_radius = map_radius
+        self.map_radius = game_info.map_radius
 
         self.speed = power_distribution[ENGINES] - cargo
 
         self.positions_in_range = set()
 
         for x, y in position.positions_in_range(self.speed):
-            if abs(x) > map_radius or abs(y) > map_radius:
+            if abs(x) > game_info.map_radius or abs(y) > game_info.map_radius:
                 continue
             self.positions_in_range.add(Position(x, y))
 
+        self.game_progress = turn_number / game_info.turns
+        self.my_money = leader_board[game_info.player_name]
+        self.my_leaderboard_position = sorted(leader_board.values(), reverse=True).index(self.my_money) + 1
+        self.max_money_in_opponents = max([money for player, money in leader_board.items() if player != game_info.player_name], default=0)
 
 class BotLogic:
     def initialize(self, player_name, map_radius, players, turns, home_base_positions):
@@ -93,29 +98,29 @@ class BotLogic:
 
         return self.get_nearest_position_and_distance_from_points(state.position, asteroid_positions)
 
-    def go_to_position(self, postion_to_go, state):
-        position_distance = math.ceil(state.position.distance_to(postion_to_go))
+    def go_to_position(self, postion_to_go, state, change_power=True, exploration_mode=True):
         if postion_to_go in state.positions_in_range:
             return FLY_TO, postion_to_go
 
         # if not reacheable, maximize engines
-        if state.power_distribution[ENGINES] < MAX_POWER:
-            optimal_engines_power = min(position_distance + state.cargo, MAX_POWER)
+        if state.power_distribution[ENGINES] < MAX_POWER and change_power:
+            return self.power_action(engines=MAX_POWER, lasers=0, shields=0)
 
-            # maybe power is enough to add a laser
-            laser_power = MAX_POWER - optimal_engines_power
+        avoid_positions = set(state.radar_contacts.keys())
+        if exploration_mode:
+            possible_fly_positions = list(state.positions_in_range - avoid_positions - self.positions_without_asteroids_on_sight)
+        else:
+            possible_fly_positions = list(state.positions_in_range - avoid_positions)
 
-            return self.power_action(engines=optimal_engines_power, lasers=laser_power, shields=0)
+        closest_position_to_target_position = min(state.positions_in_range, key=lambda p: p.distance_to(postion_to_go))
 
-        closest_position_to_asteroid = min(state.positions_in_range, key=lambda p: p.distance_to(postion_to_go))
+        return FLY_TO, closest_position_to_target_position
 
-        return FLY_TO, closest_position_to_asteroid
-
-    def go_to_mine(self, state):
+    def go_to_mine(self, state, change_power=True):
         nearest_asteroid = self.nearest_asteroid(state)
         if nearest_asteroid:
             asteroid_position, _ = nearest_asteroid
-            return self.go_to_position(asteroid_position, state)
+            return self.go_to_position(asteroid_position, state, change_power)
 
         # no asteroid on sight, fly random (avoid ships and base)
         self.positions_without_asteroids_on_sight.add(state.position)
@@ -123,7 +128,7 @@ class BotLogic:
         avoid_positions = set(state.radar_contacts.keys())
         possible_fly_positions = list(state.positions_in_range - avoid_positions - self.positions_without_asteroids_on_sight)
 
-        if not possible_fly_positions:
+        if not possible_fly_positions and change_power:
             return self.power_action(engines=MAX_POWER, shields=0, lasers=0)
 
         return FLY_TO, random.choice(possible_fly_positions)
@@ -139,26 +144,18 @@ class BotLogic:
         if not base_on_sight:
             # no base on sight, fly to the center of the map
             base = Position(0, 0)
-            return self.go_to_position(base, state)
+            return self.go_to_position(base, state, exploration_mode=False)
 
         position, _ =  self.get_nearest_position_and_distance_from_points(state.position, base_on_sight)
 
-        return self.go_to_position(position, state)
+        return self.go_to_position(position, state, exploration_mode=False)
 
     @staticmethod
     def power_action(engines, shields, lasers):
         return POWER_TO, {ENGINES: int(engines), SHIELDS: int(shields), LASERS: int(lasers)}
 
-    @iconization
-    def turn(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board):
-        state = State(turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board, self.map_radius)
-
-        if state.cargo:
-            self.mode = "cc"
-            return self.go_to_base(state)
-
-        if position in self.home_base_positions:
-            self.mode = "mm"
+    def attack_or_mine(self, state):
+        if state.max_money_in_opponents < 1500:
             return self.go_to_mine(state)
 
         spaceships_in_range = [
@@ -172,11 +169,26 @@ class BotLogic:
 
         # attack ennemies when having the opportunity
         if spaceships_in_range and state.position not in self.home_base_positions:
-            desired_power = {ENGINES: 2, SHIELDS: 0, LASERS: 1}
-            if power_distribution != desired_power:
-                self.mode = "aa"
+            if state.max_money_in_opponents >= 2000:
+                # if the opponents have a lot of money, maximize lasers to try to kill them
+                desired_power = {ENGINES: 1, SHIELDS: 0, LASERS: 2}
+            else:
+                desired_power = {ENGINES: 2, SHIELDS: 0, LASERS: 1}
+
+            if state.power_distribution != desired_power:
                 return self.power_action(**desired_power)
 
-        self.mode = "m2"
+        return self.go_to_mine(state, change_power=False)
 
-        return self.go_to_mine(state)
+
+    @iconization
+    def turn(self, turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board):
+        state = State(turn_number, hp, ship_number, cargo, position, power_distribution, radar_contacts, leader_board, game_info=self)
+
+        if state.cargo:
+            return self.go_to_base(state)
+
+        if position in self.home_base_positions:
+            return self.go_to_mine(state)
+
+        return self.attack_or_mine(state)
